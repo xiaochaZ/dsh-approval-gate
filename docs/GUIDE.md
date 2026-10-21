@@ -1,8 +1,10 @@
-# dsh-approval-gate 完整指南
+# @xiaochaz/dsh-approval-gate 完整指南
 
 > 首页：[简体中文](../README.md) · [English](../README.en.md) · 指南：[中文](GUIDE.md) · [English](GUIDE.en.md)
 
-DeepSeek Harness 自动审批门控插件 v0.5.0：**最小人工介入，只把必须人工确认的操作转人工（fail-safe）**。
+> **本文件正文来自上游 v0.5.0**，安装步骤与默认规则在本 fork 中已改变：安装以 [README](../README.md) 为准，修复清单见 [CHANGELOG](../CHANGELOG.md)，自持说明见 [FORK](../FORK.md)。
+
+DeepSeek Harness 自动审批门控插件（本 fork 0.5.3，判定管线沿用上游 0.5.2）：**最小人工介入，只把必须人工确认的操作转人工（fail-safe）**。
 
 当会话的权限预设为 `auto-approve`（自动审批（Flash））时，每次审批请求（沙箱越界）按管道判定：
 
@@ -11,7 +13,7 @@ DENY（不可逆危险词）→ 白名单（确定性规则）→ denyRules（�
 ```
 
 - **① DENY 层**：`rm -rf` / `drop table` / `force push` / 格式化等不可逆危险词命中 → 转人工（**最高优先，fail-safe**）
-- **② 白名单层**：命中规则 → 直接放行（确定性，不过 LLM）。默认规则 `{mode:"workspace-write"}` —— 工作区写入（可回补）自动放行；也支持 `tool/mode/category/contains` 组合规则（含学习沉淀的规则）
+- **② 白名单层**：命中规则 → 直接放行（确定性，不过 LLM）。**本 fork 起默认不预置任何宽规则**（上游默认 `{mode:"workspace-write"}` 等于所有工作区写入不经判定直接放行，见 issue #4）；需要时在设置页自行添加 `tool/mode/category/contains` 组合规则
 - **③ denyRules 层**：此前用户**裁决拒绝**过的「工具+模式+类别」→ 永久转人工（不会自动放行用户明确拒绝过的操作）
 - **④ flash 判定**（仅越界请求）：输出 `SAFE` 或 `RISKY:<category>`
   - `SAFE` → 自动放行
@@ -30,18 +32,15 @@ DENY（不可逆危险词）→ 白名单（确定性规则）→ denyRules（�
 ## 安装
 
 ```sh
-# 方式一：npm 安装（推荐）
-dsh plugin --profile web add dsh-approval-gate
-
-# 方式二：GitHub 安装
-dsh plugin --profile web add "github:moon09300731/dsh-approval-gate#main"
+# 从 GitHub 安装（本 fork 暂未发布 npm）
+dsh plugin --profile <你的 profile 名> add github:xiaochaZ/dsh-approval-gate#v0.5.3
 ```
 
 ## ⚠️ 安装后必须手动配置权限预设（关键步骤）
 
 插件无法向权限预设表添加选项（预设表在配置构造时冻结），需要手动在 profile 的 `cordis.patch.yml` 中补一条 preset：
 
-编辑 `~/.dsh/profiles/web/cordis.patch.yml`，追加（或合并进已有的 `permission` 行——**loader 的 patch 会整体替换目标行的 config，若已有该行必须重述全部预设**）：
+编辑 `<profile 目录>/cordis.patch.yml`（官方桌面版是 `~/.dsh/profiles/desktop/cordis.patch.yml`；本 fork 已能自行解析正确路径，也可用设置页「一键配置」写入），追加（或合并进已有的 `permission` 行——**loader 的 patch 会整体替换目标行的 config，若已有该行必须重述全部预设**）：
 
 ```yaml
 - id: permission

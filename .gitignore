@@ -1,5 +1,8 @@
 node_modules/
-*.log
+*.bak
+*.bak-approval-gate
+*.bak-gatefix
 .DS_Store
-vision.env
-.dsh-vision.env
+npm-debug.log*
+_fork-research/
+_fork-stage/

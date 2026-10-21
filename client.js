@@ -643,6 +643,7 @@ window.__ModuleLoader__.load({
       const [newRule, setNewRule] = React.useState({ tool: '', mode: '', category: '', contains: '' })
       const [threshold, setThreshold] = React.useState('3')
       const [timeoutMs, setTimeoutMs] = React.useState('20000')
+      const [judgeModel, setJudgeModel] = React.useState('')
 
       const load = function () {
         fetch('/api/auto-approve/rules', { headers: { 'cache-control': 'no-cache' } })
@@ -652,6 +653,7 @@ window.__ModuleLoader__.load({
               setSnapshot(data)
               setThreshold(String(data.config.riskyThreshold))
               setTimeoutMs(String(data.config.judgeTimeoutMs))
+              setJudgeModel(String(data.config.judgeModel || ''))
               setError(null)
             } else {
               setError('加载规则失败：' + JSON.stringify(data).slice(0, 200))
@@ -725,7 +727,10 @@ window.__ModuleLoader__.load({
             React.createElement('div', { className: 'ag-set-card-title' }, '初始化权限预设'),
             React.createElement('p', { className: 'ag-set-card-sub' },
               '安装后需在 profile 的 cordis.patch.yml 添加 auto-approve 权限预设（预设表在配置构造时冻结，无法自动扩展）。' +
-              (setup.configured ? '当前已配置 ✓' : '当前未检测到，可一键写入。'))),
+              (setup.configured ? '当前已配置 ✓' : '当前未检测到，可一键写入。') +
+              (setup.patchPath ? ' 目标文件：' + setup.patchPath : '') +
+              (setup.ambiguous && setup.hint ? ' ⚠ ' + setup.hint : '') +
+              (setup.error ? ' 读取失败：' + setup.error : ''))),
           React.createElement('div', { className: 'ag-set-row' },
             React.createElement('button', {
               type: 'button',
@@ -734,6 +739,33 @@ window.__ModuleLoader__.load({
               onClick: setupNow,
             }, setup.configured ? '重新检查' : '一键配置权限预设'),
             !setup.configured ? React.createElement('span', { className: 'ag-set-note' }, '写入后需重启 dsh web 生效') : null,
+          ),
+        ),
+
+        // ---- 判定模型（issue #8/#22：内置 flash 不可用时必须能换模型） ----
+        React.createElement('div', { className: 'ag-set-card' },
+          React.createElement('div', { className: 'ag-set-card-head' },
+            React.createElement('div', { className: 'ag-set-card-title' }, '判定模型'),
+            React.createElement('p', { className: 'ag-set-card-sub' },
+              '沙箱越界时用来判定 SAFE/RISKY 的模型。留空 = 跟随当前 agent 默认模型，两者都不可用时回退内置 deepseek-v4-flash（判定失败会转人工并在审计里留下 judgeError）。')), 
+          React.createElement('div', { className: 'ag-set-row' },
+            React.createElement('input', {
+              className: 'ag-set-input',
+              value: judgeModel,
+              placeholder: 'provider/model，如 deepseek-official/deepseek-v4-flash',
+              onChange: function (e) { setJudgeModel(e.target.value) },
+              onKeyDown: function (e) { if (e.key === 'Enter') api({ op: 'set', kind: 'judgeModel', value: judgeModel.trim() }) },
+            }),
+            React.createElement('button', {
+              type: 'button', className: 'ag-set-btn', disabled: busy,
+              onClick: function () { api({ op: 'set', kind: 'judgeModel', value: judgeModel.trim() }) },
+            }, '保存'),
+            judgeModel
+              ? React.createElement('button', {
+                  type: 'button', className: 'ag-set-btn', disabled: busy,
+                  onClick: function () { setJudgeModel(''); api({ op: 'set', kind: 'judgeModel', value: '' }) },
+                }, '恢复默认')
+              : React.createElement('span', { className: 'ag-set-note' }, '跟随 agent 默认模型'),
           ),
         ),
 

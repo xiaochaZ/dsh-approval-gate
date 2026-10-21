@@ -4,4 +4,4 @@
 # extend the frozen presets table.
 - insert:
     - id: dsh-approval-gate
-      name: 'dsh-approval-gate'
+      name: '@xiaochaz/dsh-approval-gate'

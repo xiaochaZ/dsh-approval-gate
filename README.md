@@ -1,8 +1,12 @@
 **简体中文** | [English](README.en.md)
 
-# dsh-approval-gate
+# @xiaochaz/dsh-approval-gate
 
 **DeepSeek Harness 自动审批门控 —— 最小人工介入，安全自动放行、危险转人工（fail-safe）。**
+
+> 本项目是 [`dsh-approval-gate`](https://github.com/moon09300731/dsh-approval-gate) 的社区维护 fork（基线上游 main 0.5.2，本 fork 版本 0.5.3）。
+> 上游已停更，本 fork 修好了「官方桌面版 / 任意 profile 下门控静默失效」等致命问题，并持续消化上游 issue。
+> 差异与来源说明见 [`FORK.md`](./FORK.md) 与 [`CHANGELOG.md`](./CHANGELOG.md)。
 
 Flash 模型预判每次沙箱越界：常规操作自动放行，硬风险操作（删除 / 凭据 / 远程 / 系统 / 批量）永远转人工确认；学习沉淀只针对你确认过的操作，并提供界面化人工审查入口。
 
@@ -14,43 +18,122 @@ Flash 模型预判每次沙箱越界：常规操作自动放行，硬风险操�
 - 🧠 **语义同类验证**：措辞变化但意图相同的操作，由 Flash 对照你的确认样本语义判断，不再依赖关键词
 - 🔧 **配置热更新**：`allowlist.json` 修改即时生效，无需重启
 - ✅ **人工审查 UI**：自动放行时输入框上方出现绿色提示；「审批」视图（轨迹右侧）展示当前会话完整放行时间线
-- 📄 **文件改动对比与撤销**（v0.5.0+）：审批涉及的文件可点击查看 **unified diff**——变动行带上下 5 行上下文、多处修改按 hunk 分区并以「N unmodified lines」分隔条折叠、绿加红删灰上下文、双行号；一键「撤销此改动」投递指令让 AI 按快照恢复文件
-- 🗂️ **会话级快照管理**（v0.5.0+）：快照按事件归属会话，审批视图按当前会话统计；清理支持「仅清本会话」与「清空全部」两档，避免误删其他会话未查看的 diff 记录
+- 📄 **文件改动对比与撤销**：审批涉及的文件可点击查看经典 diff（仅变更行，绿加红删），一键「撤销此改动」投递指令让 AI 恢复文件；支持查看快照占用并一键清除 diff 记录
+- 🩺 **失败可诊断**：判定链路异常不再完全静默，会写审计日志并降级人工（上游 0.5.0 的静默 catch 是本项目首先要修的坑）
 
-## 📸 界面速览
+## 🚀 安装
 
-### ① 审批视图
+三种方式任选其一。装完后**必须**完成下一步「配置权限预设」，否则插件装了也不会生效。
 
-![审批视图](docs/screenshots/approval-view.png)
-
-「审批」标签页（轨迹右侧）按时间倒序展示当前会话的自动放行与人工审批记录：每条记录含工具名（`bash` / `edit`）、判定标签（「自动放行 · Flash 判定安全」「人工通过」等）、时间与操作说明。顶部统计栏显示本会话的 **diff 快照占用**（`2.9 KB · 3 条`），并提供两个清理入口：**「仅清本会话」**（只删除当前会话的快照，不影响其他会话未查看的 diff）与 **「清空全部」**（二次确认后清空所有会话，防止误删）。
-
-### ② 文件改动对比（diff）
-
-![diff 对话框](docs/screenshots/diff-panel.png)
-
-点击审批记录中的文件即可打开对比面板：以 **unified diff** 展示改动前后差异——新增行绿底（`+`）、删除行红底（`-`）、上下文行灰底；左侧显示**原/新双行号**；多处修改按 **hunk 分区**，块间以灰色「`6 unmodified lines`」分隔条折叠未变更区间。顶部统计 `+2 / -2 行变更 · 20 行未变`。底部 **「撤销此改动」** 一键向对话投递撤销指令，AI 将按审批前的快照恢复文件。
-
-### ③ 设置 · 自动审批
-
-![设置-自动审批](docs/screenshots/settings-auto-approve.png)
-
-设置页「自动审批」分区提供完整配置：**初始化权限预设**（一键写入 `cordis.patch.yml` 的 `auto-approve` 预设）、**当前判定管道总览**（DENY → 白名单 → denyRules → Flash → 学习）、**危险词黑名单**（预置条目 + 自定义添加）、以及热更新说明（修改即时生效，无需重启）。
-
-## 🚀 快速开始
+### A. 从 GitHub 直装（推荐给他人使用）
 
 ```sh
-dsh plugin --profile web add dsh-approval-gate
+dsh plugin --profile <你的 profile 名> add github:xiaochaZ/dsh-approval-gate#v0.5.3
 ```
 
-1. **配置权限预设**：在 `~/.dsh/profiles/web/cordis.patch.yml` 添加 `auto-approve` 预设（[详见指南](docs/GUIDE.md#%E5%AE%89%E8%A3%85%E5%90%8E%E5%BF%85%E9%A1%BB%E6%89%8B%E5%8A%A8%E9%85%8D%E7%BD%AE%E6%9D%83%E9%99%90%E9%A2%84%E8%AE%BE%E5%85%B3%E9%94%AE%E6%AD%A5%E9%AA%A4)）
-2. **重启** `dsh web`
-3. **选择预设**：会话权限下拉选中「自动审批（Flash）」
+使用官方桌面版（DeepSeek Harness App）时 profile 名通常是 `desktop`；用 `dsh web` 时通常是 `web`。不确定就 `ls ~/.dsh/profiles`。
 
-## 📖 文档
+### B. 本地源码 `link:`（推荐给参与开发/改代码的人）
 
-- [完整指南（管道 / 配置 / 安全设计 / 审查 UI）](docs/GUIDE.md) · [English Guide](docs/GUIDE.en.md)
+```sh
+git clone https://github.com/xiaochaZ/dsh-approval-gate.git
+cd ~/.dsh/profiles/<profile 名>
+pnpm add "link:<刚 clone 的绝对路径>"
+```
+
+然后在同一份 `package.json` 的 `dsh.profile.bundles` 里加上 `"@xiaochaz/dsh-approval-gate"`，再 `pnpm install`。
+
+### C. 手工替换已装的 npm 版
+
+把 profile 的 `package.json` 里原来的 `"dsh-approval-gate": "^0.5.0"` 换成 `"@xiaochaz/dsh-approval-gate": "link:<路径>"`，`dsh.profile.bundles` 里的条目同步改名，然后 `pnpm install`。
+
+## ⚙️ 配置权限预设（必须）
+
+动态插件**无法**扩展宿主冻结的 presets 表，所以 `auto-approve` 预设必须手工写进 profile 的 `cordis.patch.yml`（文件：`~/.dsh/profiles/<profile 名>/cordis.patch.yml`）。
+
+如果该文件里还没有 `- id: permission` 条目，整段加上：
+
+```yaml
+# ── 自动审批模式 ─────────────────────────
+- id: permission
+  name: '@deepseek-ai/dsh-permission-presets'
+  config:
+    presets:
+      read-only:
+        sandbox: read-only
+        approval: ask
+      workspace-write:
+        sandbox: workspace-write
+        approval: ask
+      danger-full-access:
+        sandbox: danger-full-access
+        approval: never
+      auto-approve:
+        sandbox: workspace-write
+        approval: ask
+        name: 自动审批（Flash）
+        description: Flash 预判写入/命令是否不可回补：安全自动批准，有风险转人工审批。
+    defaultPreset: auto-approve
+```
+
+已经有 `- id: permission` 条目时，**只**把 `auto-approve:` 这一块插到 `presets:` 下面（注意缩进对齐到同级预设），并按需修改 `defaultPreset`。
+
+改完**重启** DSH（宿主只在启动时加载插件与预设）。之后会话权限下拉里应出现「自动审批（Flash）」；若想开局即是该模式，确保 `defaultPreset: auto-approve`。
+
+## ✅ 验证是否真的生效
+
+插件最容易的失败方式是「装了、但静默不工作」。按下面三步确认：
+
+1. **组合检查**（不需要启动 App）：
+
+   ```sh
+   dsh --profile <profile 名> --dump-config | findstr xiaochaz
+   ```
+
+   能搜到 `@xiaochaz/dsh-approval-gate` 这一行，且启动日志里**没有** `skipping profile bundle`。
+
+2. **数据检查**：`~/.dsh/auto-approve/` 下应有 `allowlist.json`、`learning.json`、`audit.log`、`events.jsonl`、`snapshots/`。
+
+3. **活体探针**：在会话里触发一次需要越界的操作（例如让 AI 往工作区外写文件 → 沙箱拒绝 → 带 `sandbox_permissions` 重试）。若自动放行，输入框上方出现绿色提示，且 `audit.log` 末尾立刻多出一行：
+
+   ```
+   [<ISO 时间>] ALLOW   <工具> mode=<沙箱模式> (flash-safe)
+   ```
+
+   若出现 `ERROR   permissionPresets.current failed: ... → 降级人工`，说明宿主 API 又变了，请带上宿主版本开 issue。
+
+## 📁 数据文件
+
+| 路径（`$DSH_HOME` 默认 `~/.dsh`） | 作用 |
+|---|---|
+| `auto-approve/allowlist.json` | 配置：`denyKeywords` / `allowRules` / `denyRules` / `hardCategories` 等，热更新 |
+| `auto-approve/learning.json` | 确认制学习状态，跨会话持久化 |
+| `auto-approve/audit.log` | 追加式审计：每次判定一行 |
+| `auto-approve/events.jsonl` | 「审批」视图的时间线数据 |
+| `auto-approve/snapshots/` | 文件 diff / 撤销所需快照 |
+
+数据目录与包名无关：从上游版换到本 fork（或反过来）**不会**丢历史学习与审计。
+
+## 🧯 常见问题
+
+| 现象 | 原因 / 处理 |
+|---|---|
+| 下拉里没有「自动审批（Flash）」 | `auto-approve` 预设没写进 `cordis.patch.yml`，或没重启 |
+| 选了预设但从不自动放行 | 先看 `audit.log`：若是 `ERROR ... → 降级人工`，宿主 API 漂移（开 issue 附宿主版本）；若日志根本没增长，插件没被挂载（跑第 1 步 `--dump-config`） |
+| 设置页说「未配置」，但明明配了 | 0.5.0 的路径硬编码 bug（只认 `profiles/web`）；本 fork 已修 |
+| 升级 DSH 后突然失效 | 本插件依赖宿主内部 API（`permissionPresets` / `sessionProjections`），升级后请重跑「验证」三步 |
+
+## ⚠️ 已知限制
+
+- 依赖 DSH 宿主内部 API，宿主小版本升级可能改签名；升级后请重跑验证。
+- 动态插件不能扩展宿主冻结的 presets 表 → 「配置权限预设」这一步永远需要手工做一次（上游同样如此）。
+- 风险判定交给模型，本质是概率性的：硬风险类别做硬拦截，但仍建议对生产/凭据相关操作保持人工确认。
+
+## 📖 版本与变更
+
+- [`CHANGELOG.md`](./CHANGELOG.md)：每个版本的修复内容，标注对应的上游 PR / issue 编号
+- [`FORK.md`](./FORK.md)：基线、与原版的差异、内部标识为何不改名、与上游的同步策略
 
 ## 📄 License
 
-MIT
+MIT，详见 [`LICENSE`](./LICENSE)（保留上游原作者版权声明）。本项目为社区 fork，与原仓库维护者无关。

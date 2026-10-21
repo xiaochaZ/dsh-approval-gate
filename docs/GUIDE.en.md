@@ -1,8 +1,10 @@
-# dsh-approval-gate — Full Guide
+# @xiaochaz/dsh-approval-gate — Full Guide
 
 > Home: [English](../README.en.md) · [简体中文](../README.md) · Guide: [English](GUIDE.en.md) · [中文](GUIDE.md)
 
-DeepSeek Harness auto-approval gate plugin v0.5.0: **minimal human intervention — only operations that must be confirmed go to a human (fail-safe)**.
+> **The body of this file comes from upstream v0.5.0.** Installation steps and default rules changed in this fork: install from [README](../README.en.md), see [CHANGELOG](../CHANGELOG.md) for fixes and [FORK](../FORK.md) for maintenance notes.
+
+DeepSeek Harness auto-approval gate plugin (this fork 0.5.3, pipeline inherited from upstream 0.5.2): **minimal human intervention — only operations that must be confirmed go to a human (fail-safe)**.
 
 When a session's permission preset is `auto-approve` (Auto Approval (Flash)), every approval request (sandbox escalation) is judged through this pipeline:
 
@@ -30,18 +32,15 @@ DENY (irreversible keywords) → allowlist (deterministic rules) → denyRules (
 ## Install
 
 ```sh
-# Option 1: npm (recommended)
-dsh plugin --profile web add dsh-approval-gate
-
-# Option 2: GitHub
-dsh plugin --profile web add "github:moon09300731/dsh-approval-gate#main"
+# Install from GitHub (this fork is not published to npm yet)
+dsh plugin --profile <your profile> add github:xiaochaZ/dsh-approval-gate#v0.5.3
 ```
 
 ## ⚠️ Manual permission preset (required after install)
 
 The plugin cannot extend the frozen permission-preset table; add the preset manually to the profile's `cordis.patch.yml`:
 
-Edit `~/.dsh/profiles/web/cordis.patch.yml` and append (or merge into the existing `permission` row — **the loader patch replaces the whole row's config, so restate every preset**):
+Edit `<profile dir>/cordis.patch.yml` (desktop app: `~/.dsh/profiles/desktop/cordis.patch.yml`) and append (or merge into the existing `permission` row — **the loader patch replaces the whole row's config, so restate every preset**):
 
 ```yaml
 - id: permission

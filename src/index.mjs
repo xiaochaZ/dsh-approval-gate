@@ -33,6 +33,7 @@
 import { readFileSync, writeFileSync, existsSync, appendFileSync, mkdirSync, readdirSync, statSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const NAME = 'dsh-approval-gate'
 const DSH_HOME = process.env.DSH_HOME || join(homedir(), '.dsh')
@@ -42,7 +43,64 @@ const LEARNING_PATH = join(DATA_DIR, 'learning.json')
 const AUDIT_PATH = join(DATA_DIR, 'audit.log')
 const EVENTS_PATH = join(DATA_DIR, 'events.jsonl')
 const SNAPSHOTS_DIR = join(DATA_DIR, 'snapshots')
-const PROFILE_PATCH_PATH = join(DSH_HOME, 'profiles', 'web', 'cordis.patch.yml')
+// 0.2.x 起 profile 名随发行形态变化（官方桌面版=desktop / Web=web / headless=headless）。
+// 0.5.0 写死 profiles/web：官方桌面版下「一键配置」写错文件、设置页永远显示未配置（issue #2、#25）。
+const PROFILE_ORDER = ['desktop', 'headless', 'web']
+
+/** 本插件是被哪个 profile 安装并加载的：看自身模块路径里的 profiles/<name>/node_modules */
+function installedProfileName() {
+  try {
+    const parts = fileURLToPath(import.meta.url).split(/[\\/]/)
+    const i = parts.lastIndexOf('profiles')
+    if (i >= 0 && parts[i + 1] && parts[i + 2] === 'node_modules') return parts[i + 1]
+  } catch { /* 非 file: 协议或测试环境 → 走环境变量/扫描兜底 */ }
+  return ''
+}
+
+/** 所有「确实存在 cordis.patch.yml」的 profile 名 */
+function profilePatchCandidates() {
+  const root = join(DSH_HOME, 'profiles')
+  const names = []
+  try {
+    for (const name of readdirSync(root)) {
+      try {
+        if (statSync(join(root, name, 'cordis.patch.yml')).isFile()) names.push(name)
+      } catch { /* 该目录没有 patch 文件 */ }
+    }
+  } catch { /* 没有 profiles 目录 */ }
+  return names
+}
+
+/**
+ * 解析当前生效 profile 的 cordis.patch.yml 路径。
+ * 顺序：配置项 profilePatchPath → 自身安装路径 → DSH_PROFILE_DIR → DSH_PROFILE → 目录扫描。
+ * 多 profile 同时有 patch 文件时标记 ambiguous（issue #6 的教训：猜错目录会写坏别人的配置文件）。
+ */
+function resolveProfilePatchPath() {
+  const override = typeof config.profilePatchPath === 'string' ? config.profilePatchPath.trim() : ''
+  if (override) return { path: override, profile: '', source: 'config', candidates: [], ambiguous: false }
+
+  const candidates = profilePatchCandidates()
+  const self = installedProfileName()
+  if (self) return { path: join(DSH_HOME, 'profiles', self, 'cordis.patch.yml'), profile: self, source: 'installed-path', candidates, ambiguous: false }
+
+  const envDir = process.env.DSH_PROFILE_DIR ? String(process.env.DSH_PROFILE_DIR).trim() : ''
+  if (envDir) {
+    const name = envDir.split(/[\\/]/).filter(Boolean).pop() || ''
+    return { path: join(envDir, 'cordis.patch.yml'), profile: name, source: 'env:DSH_PROFILE_DIR', candidates, ambiguous: false }
+  }
+
+  const envName = process.env.DSH_PROFILE ? String(process.env.DSH_PROFILE).trim() : ''
+  if (envName) return { path: join(DSH_HOME, 'profiles', envName, 'cordis.patch.yml'), profile: envName, source: 'env:DSH_PROFILE', candidates, ambiguous: false }
+
+  if (candidates.length === 1) return { path: join(DSH_HOME, 'profiles', candidates[0], 'cordis.patch.yml'), profile: candidates[0], source: 'scan', candidates, ambiguous: false }
+
+  const preferred = PROFILE_ORDER.find((n) => candidates.includes(n))
+  if (preferred) {
+    return { path: join(DSH_HOME, 'profiles', preferred, 'cordis.patch.yml'), profile: preferred, source: 'scan:guess', candidates, ambiguous: candidates.length > 1 }
+  }
+  return { path: join(DSH_HOME, 'profiles', 'web', 'cordis.patch.yml'), profile: '', source: 'fallback', candidates, ambiguous: false }
+}
 
 // 快照限制：单文件 ≤256KB、每事件 ≤5 个文件
 const SNAPSHOT_MAX_BYTES = 256 * 1024
@@ -394,15 +452,15 @@ const DEFAULT_DENY_KEYWORDS = [
   'rm -rf', 'rm -fr', 'rm -r -f', 'rm --recursive --force',
   'push --force', 'force-push', 'force push', 'drop table', 'drop database',
   'mkfs', 'mkfs.ext', 'format', 'shutdown', 'reboot', 'dd of=',
-  'delete from', 'truncate table', 'truncate ', 'terraform destroy', 'revoke',
+  'delete from', 'truncate table', 'truncate', 'terraform destroy', 'revoke',
   '清空数据库', '删除数据库', '格式化', 'sudo rm', 'chmod 777 /',
   'git reset --hard', 'git clean -fd', 'docker rm', 'docker system prune'
 ]
 
-// 默认白名单规则：工作区写入（可回补）自动放行
-const DEFAULT_ALLOW_RULES = [
-  { mode: 'workspace-write', description: '工作区写入（可回补，对应 acceptEdits/workspace-write）' }
-]
+// 默认白名单规则：默认空（issue #4 P0-1）。
+// 0.5.0 预置了 { mode: 'workspace-write' } 宽规则 → 所有工作区写入不经 flash 判定直接放行，
+// 等于绕过本插件的判定层。0.5.3 起不再预置；若已有 allowlist.json 仍带该条，需自行删除。
+const DEFAULT_ALLOW_RULES = []
 
 // 硬风险类别：flash 判 RISKY 且命中这些类别 → 直接转人工（不计数、不学习、永远人工）
 const DEFAULT_HARD_CATEGORIES = ['deletion', 'credential', 'remote', 'system', 'bulk']
@@ -436,6 +494,10 @@ function getRulesSnapshot() {
       hardCategories: config.hardCategories || [],
       riskyThreshold: config.riskyThreshold || 3,
       judgeTimeoutMs: config.judgeTimeoutMs || 20000,
+      judgeModel: config.judgeModel || '',
+      denyMatch: config.denyMatch === 'substring' ? 'substring' : 'boundary',
+      profilePatchPath: config.profilePatchPath || '',
+      apiAllowAddresses: config.apiAllowAddresses || [],
       learning: { enabled: learning.enabled !== false }
     },
     learning: {
@@ -453,19 +515,66 @@ function getRulesSnapshot() {
 
 /** 检查权限预设是否已配置（供设置页初始化卡片） */
 function getSetupState() {
-  try {
-    const text = readFileSync(PROFILE_PATCH_PATH, 'utf8')
-    return { configured: text.includes('auto-approve:'), patchPath: PROFILE_PATCH_PATH }
-  } catch (e) {
-    return { configured: false, patchPath: PROFILE_PATCH_PATH, error: String((e && e.message) || e) }
+  const resolved = resolveProfilePatchPath()
+  const state = {
+    configured: false,
+    patchPath: resolved.path,
+    profile: resolved.profile || null,
+    source: resolved.source,
+    candidates: resolved.candidates || [],
+    ambiguous: Boolean(resolved.ambiguous)
   }
+  if (state.ambiguous) {
+    state.hint = '检测到多个 profile 都有 cordis.patch.yml（' + state.candidates.join(', ') + '）。为避免写错文件已停止自动猜测：请在 allowlist.json 里设置 profilePatchPath，或设置环境变量 DSH_PROFILE / DSH_PROFILE_DIR 后重试。'
+  }
+  try {
+    state.configured = readFileSync(resolved.path, 'utf8').includes('auto-approve:')
+  } catch (error) {
+    state.error = String((error && error.message) || error)
+  }
+  return state
 }
 
-/** 一键初始化：在 cordis.patch.yml 中写入 auto-approve 权限预设（文本级操作，保留注释格式） */
+/**
+ * 一键初始化：在 cordis.patch.yml 中写入 auto-approve 权限预设（文本级操作，保留注释格式）。
+ * issue #6：0.5.0 对根节点为 []（或空文件）的 patch 做纯文本尾部追加 → 生成非法 YAML，
+ * 宿主起不来且 Web UI 也进不去。这里先识别空占位并整体重写，写前留备份。
+ */
 function ensureAutoApprovePreset() {
+  const resolved = resolveProfilePatchPath()
+  if (resolved.ambiguous) {
+    return {
+      ok: false,
+      status: 'ambiguous-profile',
+      needRestart: false,
+      patchPath: resolved.path,
+      candidates: resolved.candidates,
+      error: '检测到多个 profile 都有 cordis.patch.yml（' + resolved.candidates.join(', ') + '），已停止自动写入。请设置 allowlist.json 的 profilePatchPath 或环境变量 DSH_PROFILE 后重试'
+    }
+  }
+
+  const patchPath = resolved.path
   try {
-    const text = readFileSync(PROFILE_PATCH_PATH, 'utf8')
-    if (text.includes('auto-approve:')) return { ok: true, status: 'already', needRestart: false }
+    const text = readFileSync(patchPath, 'utf8')
+    if (text.includes('auto-approve:')) return { ok: true, status: 'already', needRestart: false, patchPath }
+
+    // 写前备份：写坏了用户能自己回滚（issue #6 的补救前提）
+    try {
+      writeFileSync(patchPath + '.bak-approval-gate', text, 'utf8')
+    } catch { /* 备份失败不阻断，但下面仍会做结构校验 */ }
+
+    // 空文件 / 只有注释 / 根节点为 [] 的占位 patch → 整体重写（追加会得到非法 YAML）
+    const meaningful = text
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith('#'))
+    const isEmptyPlaceholder = meaningful.length === 0 || (meaningful.length === 1 && meaningful[0] === '[]')
+
+    if (isEmptyPlaceholder) {
+      const next = FULL_PERMISSION_BLOCK + AUTO_APPROVE_PRESET_YAML
+      writeFileSync(patchPath, next, 'utf8')
+      return { ok: true, status: 'rewrote-empty', needRestart: true, patchPath }
+    }
 
     const lines = text.split('\n')
     let permIdx = -1
@@ -475,9 +584,9 @@ function ensureAutoApprovePreset() {
 
     if (permIdx === -1) {
       // 无 permission 条目：追加完整预设块
-      const next = text.replace(/\s*$/, '') + FULL_PERMISSION_BLOCK + AUTO_APPROVE_PRESET_YAML
-      writeFileSync(PROFILE_PATCH_PATH, next, 'utf8')
-      return { ok: true, status: 'added-entry', needRestart: true }
+      const next = text.replace(/\s*$/, '') + '\n' + FULL_PERMISSION_BLOCK + AUTO_APPROVE_PRESET_YAML
+      writeFileSync(patchPath, next, 'utf8')
+      return { ok: true, status: 'added-entry', needRestart: true, patchPath }
     }
 
     // 有 permission 条目：在其 presets 块末尾插入 auto-approve
@@ -488,8 +597,7 @@ function ensureAutoApprovePreset() {
       if (i > permIdx && /^- /.test(lines[i]) && !/^ {2,}- /.test(lines[i])) break // 下一个顶层条目
     }
     if (presetsIdx === -1) {
-      // permission 条目存在但没有 presets 键：在 config 下补 presets（简化处理）
-      return { ok: false, status: 'no-presets-key', needRestart: false, error: 'permission 条目缺少 presets 键，请手动添加' }
+      return { ok: false, status: 'no-presets-key', needRestart: false, patchPath, error: 'permission 条目缺少 presets 键，请手动添加' }
     }
     // 从 presetsIdx 往下找最后一个 presets 子项行（缩进 6 且非注释空行），直到顶层条目/文件尾
     let insertAt = presetsIdx
@@ -500,10 +608,17 @@ function ensureAutoApprovePreset() {
       if (/^\s*$/.test(line)) continue
     }
     lines.splice(insertAt + 1, 0, AUTO_APPROVE_PRESET_YAML.replace(/\n$/, ''))
-    writeFileSync(PROFILE_PATCH_PATH, lines.join('\n'), 'utf8')
-    return { ok: true, status: 'added-preset', needRestart: true }
-  } catch (e) {
-    return { ok: false, status: 'error', needRestart: false, error: String((e && e.message) || e) }
+    const next = lines.join('\n')
+
+    // 结构校验：写出的文件必须仍能被 YAML 顶层列表结构接受（缩进为 2 的倍数、无 Tab）
+    if (/\t/.test(next)) {
+      writeFileSync(patchPath + '.bak-approval-gate', text, 'utf8')
+      return { ok: false, status: 'would-break-yaml', needRestart: false, patchPath, error: '插入后会引入 Tab 缩进（YAML 非法），已放弃写入；原文件已备份为 cordis.patch.yml.bak-approval-gate' }
+    }
+    writeFileSync(patchPath, next, 'utf8')
+    return { ok: true, status: 'added-preset', needRestart: true, patchPath }
+  } catch (error) {
+    return { ok: false, status: 'error', needRestart: false, patchPath, error: String((error && error.message) || error) }
   }
 }
 
@@ -520,6 +635,26 @@ function applyRuleOp(op, kind, value) {
     saveJson(ALLOWLIST_PATH, config)
     audit(`CONFIG  ${kind} → ${n}`)
     return { ok: true, set: true, value: n }
+  }
+
+  // 字符串/枚举类配置（判定模型、profile patch 路径、deny 匹配方式、API 允许来源）
+  if (kind === 'judgeModel' || kind === 'profilePatchPath' || kind === 'denyMatch' || kind === 'apiAllowAddresses') {
+    if (op !== 'set') return { ok: false, error: `${kind} 使用 set 操作` }
+    const str = value == null ? '' : String(value).trim()
+    if (kind === 'denyMatch' && str && str !== 'boundary' && str !== 'substring') return { ok: false, error: 'denyMatch 只能是 boundary 或 substring' }
+    if (kind === 'judgeModel' && str && !/^[^/\s]+\/[^\s]+$/.test(str)) return { ok: false, error: 'judgeModel 需为 provider/model 形式' }
+    if (kind === 'apiAllowAddresses') {
+      const addresses = str ? str.split(/[,\s]+/).filter(Boolean) : []
+      config.apiAllowAddresses = addresses
+      saveJson(ALLOWLIST_PATH, config)
+      audit(`CONFIG  apiAllowAddresses → ${JSON.stringify(addresses)}`)
+      return { ok: true, set: true, value: addresses }
+    }
+    if (str) config[kind] = str
+    else delete config[kind]
+    saveJson(ALLOWLIST_PATH, config)
+    audit(`CONFIG  ${kind} → ${str || '(默认)'}`)
+    return { ok: true, set: true, value: str || null }
   }
 
   const list = config[kind]
@@ -647,6 +782,16 @@ function saveJson(path, data) {
   }
 }
 
+/** 把未知异常折叠成一行可审计文本（0.5.0 只 console.error，审计与 UI 都看不到原因） */
+function describeError(error) {
+  if (!error) return ''
+  if (typeof error === 'string') return error.slice(0, 300)
+  const name = error.name ? String(error.name) : 'Error'
+  const message = error.message ? String(error.message) : String(error)
+  const code = error.code ? ` code=${error.code}` : ''
+  return `${name}${code}: ${message}`.slice(0, 300)
+}
+
 function audit(line) {
   try {
     ensureDataDir()
@@ -664,6 +809,14 @@ function normalizeConfig(raw) {
   cfg.riskyThreshold = cfg.riskyThreshold || 3
   cfg.judgeTimeoutMs = cfg.judgeTimeoutMs || 20000
   cfg.learning = cfg.learning || { enabled: true }
+  // judgeModel 必须是 provider/model，空或非法一律丢弃（issue #8/#22）
+  if (typeof cfg.judgeModel === 'string' && /^[^/\s]+\/[^\s]+$/.test(cfg.judgeModel.trim())) cfg.judgeModel = cfg.judgeModel.trim()
+  else delete cfg.judgeModel
+  // profilePatchPath：多 profile 机器上显式指定要写入的 cordis.patch.yml
+  if (typeof cfg.profilePatchPath === 'string' && cfg.profilePatchPath.trim()) cfg.profilePatchPath = cfg.profilePatchPath.trim()
+  else delete cfg.profilePatchPath
+  if (cfg.denyMatch !== 'substring' && cfg.denyMatch !== 'boundary') delete cfg.denyMatch
+  if (!Array.isArray(cfg.apiAllowAddresses)) delete cfg.apiAllowAddresses
   return cfg
 }
 
@@ -714,10 +867,32 @@ for (const k of Object.keys(learning.history)) {
     .slice(-10)
 }
 
+// deny 关键词匹配（issue #13：0.5.0 用裸子串，像 format 会命中 Format-Table / --format，
+// 导致 PowerShell 常规命令被误判为「格式化磁盘」）。默认按词边界匹配；
+// 边界字符集含 '-'，因此 --format / Format-Table / force-push 这类连字符前缀不再误命中。
+// 需要老行为可在 allowlist.json 设 denyMatch: "substring"。
+function denyKeywordRegex(keyword) {
+  const kw = String(keyword || '').trim().toLowerCase()
+  if (!kw) return null
+  const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  try {
+    return new RegExp('(?<![a-z0-9_-])' + escaped + '(?![a-z0-9_-])')
+  } catch {
+    return null
+  }
+}
+
 function looksDeny(text) {
   const lower = String(text || '').toLowerCase()
   const keywords = config.denyKeywords || DEFAULT_DENY_KEYWORDS
-  return keywords.some((keyword) => lower.includes(String(keyword).toLowerCase()))
+  const mode = config.denyMatch === 'substring' ? 'substring' : 'boundary'
+  return keywords.some((keyword) => {
+    const kw = String(keyword || '').trim().toLowerCase()
+    if (!kw) return false
+    if (mode === 'substring') return lower.includes(kw)
+    const re = denyKeywordRegex(kw)
+    return re ? re.test(lower) : lower.includes(kw)
+  })
 }
 
 // reason 格式：`escalate sandbox to <mode>: <justification>`
@@ -796,11 +971,55 @@ export default {
     const agentDefaultModel = ctx.get('agentDefaultModel')
     const PRESET_NAME = 'auto-approve'
 
+    // ---- 路由访问守卫（issue #12：0.5.0 的 /api/auto-approve/* 没有任何校验，
+    //      任意本机进程或网页都能读取审计轨迹、改规则、清快照）----
+    function isLoopbackAddress(addr) {
+      const a = String(addr || '')
+      return a === '::1' || a.startsWith('127.') || a === '::ffff:127.0.0.1'
+    }
+
+    /** 只放行本机回环 + 同源请求；需要远程访问时在 allowlist.json 设 apiAllowAddresses */
+    const apiGuard = (handler) => async (req, res) => {
+      const reject = (code, why) => {
+        try { audit(`DENIED  api ${String(req.method || '')} ${String(req.url || '').slice(0, 120)} reason=${why}`) } catch { /* 忽略 */ }
+        if (!res.headersSent) {
+          res.writeHead(code, { 'content-type': 'application/json; charset=utf-8' })
+          res.end(JSON.stringify({ ok: false, error: why }))
+        }
+      }
+      try {
+        const allowRemote = Array.isArray(config.apiAllowAddresses) ? config.apiAllowAddresses.map((v) => String(v)) : []
+        const remote = (req.socket && (req.socket.remoteAddress || '')) || ''
+        if (!isLoopbackAddress(remote) && !allowRemote.includes(remote)) {
+          return reject(403, 'non-loopback client rejected (set apiAllowAddresses to allow)')
+        }
+        if (String(req.headers['sec-fetch-site'] || '') === 'cross-site') {
+          return reject(403, 'cross-site request rejected')
+        }
+        const origin = req.headers.origin
+        if (origin) {
+          let sameOrigin = false
+          try {
+            sameOrigin = new URL(origin).host === String(req.headers.host || '')
+          } catch { sameOrigin = false }
+          if (!sameOrigin) return reject(403, 'cross-origin request rejected')
+        }
+        return await handler(req, res)
+      } catch (error) {
+        if (!res.headersSent) {
+          res.writeHead(400, { 'content-type': 'application/json; charset=utf-8' })
+          res.end(JSON.stringify({ ok: false, error: String((error && error.message) || error) }))
+        }
+      }
+    }
+
+    const registerRoute = (options) => ctx.webServer.register(Object.assign({}, options, { handler: apiGuard(options.handler) }))
+
     // ---- 自动放行事件 API（client 审查界面轮询；按会话过滤 + since 增量） ----
     let offEventsRoute = null
     try {
       if (ctx.webServer && typeof ctx.webServer.register === 'function') {
-        offEventsRoute = ctx.webServer.register({
+        offEventsRoute = registerRoute({
           kind: 'exact',
           path: '/api/auto-approve/events',
           handler: async (req, res) => {
@@ -836,9 +1055,10 @@ export default {
     // ---- 规则管理 API（设置页：查看/修改放行与阻塞规则 + 一键初始化） ----
     let offRulesRoute = null
     let offSetupRoute = null
+    let offModelsRoute = null
     try {
       if (ctx.webServer && typeof ctx.webServer.register === 'function') {
-        offRulesRoute = ctx.webServer.register({
+        offRulesRoute = registerRoute({
           kind: 'exact',
           path: '/api/auto-approve/rules',
           handler: async (req, res) => {
@@ -863,7 +1083,7 @@ export default {
             }
           },
         })
-        offSetupRoute = ctx.webServer.register({
+        offSetupRoute = registerRoute({
           kind: 'exact',
           path: '/api/auto-approve/setup',
           handler: async (req, res) => {
@@ -884,7 +1104,33 @@ export default {
             }
           },
         })
-        console.log(`[${NAME}] 规则/初始化 API 已注册：/api/auto-approve/rules, /setup`)
+        offModelsRoute = registerRoute({
+          kind: 'exact',
+          path: '/api/auto-approve/models',
+          handler: async (req, res) => {
+            const send = (code, obj) => {
+              res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-cache' })
+              res.end(JSON.stringify(obj))
+            }
+            try {
+              if (req.method !== 'GET' && req.method !== 'HEAD') return send(405, { ok: false, error: 'method not allowed' })
+              const current = resolveJudgeModel()
+              let providers = null
+              let error = ''
+              try {
+                if (llm && typeof llm.listProviders === 'function') providers = await llm.listProviders()
+                else if (llm && typeof llm.listModels === 'function') providers = await llm.listModels()
+              } catch (e) {
+                error = String((e && e.message) || e)
+              }
+              return send(200, { ok: true, current, providers, error })
+            } catch (e) {
+              send(400, { ok: false, error: String((e && e.message) || e) })
+            }
+          },
+        })
+
+        console.log(`[${NAME}] 规则/初始化/模型 API 已注册：/api/auto-approve/rules, /setup, /models`)
       } else {
         console.warn(`[${NAME}] webServer 不可用，规则/初始化 API 未注册`)
       }
@@ -935,7 +1181,7 @@ export default {
           res.end(JSON.stringify(obj))
         }
 
-        offDiffRoute = ctx.webServer.register({
+        offDiffRoute = registerRoute({
           kind: 'exact',
           path: '/api/auto-approve/diff',
           handler: async (req, res) => {
@@ -971,7 +1217,7 @@ export default {
           },
         })
 
-        offRevertRoute = ctx.webServer.register({
+        offRevertRoute = registerRoute({
           kind: 'exact',
           path: '/api/auto-approve/revert',
           handler: async (req, res) => {
@@ -1018,7 +1264,7 @@ export default {
           },
         })
 
-        offSnapStatsRoute = ctx.webServer.register({
+        offSnapStatsRoute = registerRoute({
           kind: 'exact',
           path: '/api/auto-approve/snapshots-stats',
           handler: async (req, res) => {
@@ -1053,7 +1299,7 @@ export default {
           },
         })
 
-        offSnapClearRoute = ctx.webServer.register({
+        offSnapClearRoute = registerRoute({
           kind: 'exact',
           path: '/api/auto-approve/snapshots-clear',
           handler: async (req, res) => {
@@ -1089,53 +1335,100 @@ export default {
       if (offEventsRoute) { try { offEventsRoute() } catch (e) {} }
       if (offRulesRoute) { try { offRulesRoute() } catch (e) {} }
       if (offSetupRoute) { try { offSetupRoute() } catch (e) {} }
+      if (offModelsRoute) { try { offModelsRoute() } catch (e) {} }
       if (offDiffRoute) { try { offDiffRoute() } catch (e) {} }
       if (offRevertRoute) { try { offRevertRoute() } catch (e) {} }
       if (offSnapStatsRoute) { try { offSnapStatsRoute() } catch (e) {} }
       if (offSnapClearRoute) { try { offSnapClearRoute() } catch (e) {} }
     })
 
-    const resolveModel = () => {
+    const BUILTIN_JUDGE_MODEL = { provider: 'deepseek-official', model: 'deepseek-v4-flash' }
+
+    /**
+     * 判定模型解析：allowlist.json 的 judgeModel（"provider/model"）> agent 默认模型 > 内置 flash。
+     * issue #8/#22：内置 flash 在部分部署下不可用，判定请求必然失败，用户无法自行换模型。
+     * @returns {{provider:string, model:string, source:'config'|'agent-default'|'builtin'}}
+     */
+    const resolveJudgeModel = () => {
+      const pinned = typeof config.judgeModel === 'string' ? config.judgeModel.trim() : ''
+      if (pinned) {
+        const slash = pinned.indexOf('/')
+        if (slash > 0 && slash < pinned.length - 1) {
+          return { provider: pinned.slice(0, slash), model: pinned.slice(slash + 1), source: 'config' }
+        }
+      }
       try {
         const sel = agentDefaultModel && typeof agentDefaultModel.currentSelection === 'function'
           ? agentDefaultModel.currentSelection()
           : undefined
         if (sel && typeof sel.provider === 'string' && sel.provider && typeof sel.model === 'string' && sel.model) {
-          return { provider: sel.provider, model: sel.model }
+          return { provider: sel.provider, model: sel.model, source: 'agent-default' }
         }
       } catch (error) {
         console.error(`[${NAME}] agentDefaultModel.currentSelection() failed`, error)
       }
-      return { provider: 'deepseek-official', model: 'deepseek-v4-flash' }
+      return { provider: BUILTIN_JUDGE_MODEL.provider, model: BUILTIN_JUDGE_MODEL.model, source: 'builtin' }
+    }
+
+    const resolveModel = resolveJudgeModel
+
+    // issue #8/#22：reasoningEffort: 'off' 在部分模型/宿主上不被接受，判定请求次次失败，
+    // 表现为「所有请求都转人工」。首次判定为不支持时改走「不传 effort」，并记住该路由。
+    let reasoningEffortUnsupported = false
+
+    const isEffortUnsupported = (error) => {
+      const text = String((error && (error.message || error)) || '')
+      if (!/effort|reasoning/i.test(text)) return false
+      return /unsupported|not[\s_-]?support|invalid|unknown|unrecognized|不支持|无效/i.test(text)
     }
 
     /**
      * 底层 flash 调用：流式请求并累积文本输出（可取消）。
-     * 由 judgeOnce / verifySimilarity 共用；异常向上抛，由 withRetry 决定重试或降级。
-     * @returns {Promise<string>} 模型原始输出文本
+     * 只累积 text-delta：reasoning-delta 是模型的思考过程，不参与 SAFE/RISKY 协议解析（issue #20）。
+     * @returns {Promise<string>} 模型输出的文本
      */
-    const callFlash = async (userText, systemPrompt, signal) => {
-      const { provider, model } = resolveModel()
-      let text = ''
-      for await (const chunk of llm.stream({
+    const streamFlashOnce = async (userText, systemPrompt, signal) => {
+      const { provider, model } = resolveJudgeModel()
+      const options = {
         provider,
         model,
         messages: [{ role: 'user', content: [{ type: 'text', text: userText }] }],
         system: systemPrompt,
         temperature: 0,
-        reasoningEffort: 'off',
         // 256：结论仅几个词，但模型偶发先输出复述/思考文本，64 会被截断导致解析失败
         maxTokens: 256,
         signal
-      })) {
-        if (chunk.type === 'text-delta') text += chunk.text
-        else if (chunk.type === 'reasoning-delta') text += chunk.text
-        else if (chunk.type === 'finish' && (chunk.reason.kind === 'error' || chunk.reason.kind === 'aborted')) {
-          const failure = chunk.reason.failure && chunk.reason.failure.message ? chunk.reason.failure.message : chunk.reason.kind
-          throw new Error('flash 调用失败: ' + failure)
+      }
+      if (!reasoningEffortUnsupported) options.reasoningEffort = 'off'
+
+      let text = ''
+      for await (const chunk of llm.stream(options)) {
+        if (chunk.type === 'text-delta') {
+          text += chunk.text
+        } else if (chunk.type === 'finish') {
+          // chunk.reason 在部分宿主版本上是可选的（issue #10：直接读 chunk.reason.kind 会 TypeError）
+          const reason = chunk.reason || {}
+          if (reason.kind === 'error' || reason.kind === 'aborted') {
+            const failure = reason.failure && reason.failure.message ? reason.failure.message : reason.kind
+            const error = new Error('flash 调用失败: ' + failure)
+            error.judgeFailureKind = reason.kind
+            throw error
+          }
         }
       }
       return text
+    }
+
+    const callFlash = async (userText, systemPrompt, signal) => {
+      if (reasoningEffortUnsupported) return streamFlashOnce(userText, systemPrompt, signal)
+      try {
+        return await streamFlashOnce(userText, systemPrompt, signal)
+      } catch (error) {
+        if (!isEffortUnsupported(error)) throw error
+        reasoningEffortUnsupported = true
+        audit(`CONFIG  reasoningEffort=off 不被当前模型支持 → 判定请求改为不传 effort | ${String((error && error.message) || error).slice(0, 160)}`)
+        return streamFlashOnce(userText, systemPrompt, signal)
+      }
     }
 
     /**
@@ -1213,11 +1506,13 @@ export default {
 
     /**
      * 通用超时 + 重试包装：runFn(signal) 返回结果对象；
-     * 超时 abort 并重试 1 次，仍失败 → { failed: true }（调用方按 fail-safe 处理）。
+     * 超时 abort 并重试 1 次，仍失败 → { failed: true, error }（调用方按 fail-safe 处理）。
      * judgeOnce / verifySimilarity 共用；rejection 在 race 内消化（防 unhandled rejection）。
+     * 失败原因必须带回调用方（0.5.0 只返回 {failed:true}，用户看不到为什么判定器不可用）。
      */
     const withRetry = async (runFn, label) => {
       const timeoutMs = config.judgeTimeoutMs || 20000
+      let lastError = null
       const runOnce = async () => {
         const controller = new AbortController()
         const timer = ctx.timeout(timeoutMs).then(() => {
@@ -1239,32 +1534,44 @@ export default {
       try {
         const first = await runOnce()
         if (!first.timedOut) return first
+        lastError = new Error(`${label} 超时(${timeoutMs}ms)`)
         console.warn(`[${NAME}] ${label} 超时(${timeoutMs}ms)，重试 1 次`)
       } catch (error) {
+        lastError = error
         console.error(`[${NAME}] ${label} 异常，重试 1 次`, error)
       }
       try {
         const second = await runOnce()
         if (!second.timedOut) return second
+        lastError = lastError || new Error(`${label} 两次超时(${timeoutMs}ms×2)`)
       } catch (error) {
+        lastError = error
         console.error(`[${NAME}] ${label} 重试仍异常`, error)
-        return { failed: true }
+        return { failed: true, error: lastError }
       }
       console.warn(`[${NAME}] ${label} 两次超时(${timeoutMs}ms×2)`)
-      return { failed: true }
+      return { failed: true, error: lastError }
     }
 
-    /** flash 风险判定（带超时重试）：失败 → { verdict:'risky', category:'neutral', failed:true }（fail-safe） */
+    /** flash 风险判定（带超时重试）：失败 → { verdict:'risky', category:'neutral', failed:true, judgeError }（fail-safe） */
     const judgeWithFlash = async (toolName, mode, justification) => {
       const result = await withRetry((signal) => judgeOnce(toolName, mode, justification, signal), 'flash 判断')
-      if (result.failed) return { verdict: 'risky', category: 'neutral', timedOut: true, failed: true }
+      if (result.failed) {
+        const judgeError = describeError(result.error) || 'unknown'
+        audit(`JUDGE   flash 判定不可用，转人工 | ${judgeError}`)
+        return { verdict: 'risky', category: 'neutral', timedOut: true, failed: true, judgeError }
+      }
       return result
     }
 
-    /** 同类验证（带超时重试）：失败 → { verdict:'different', failed:true }（fail-safe：验证失败按不同类处理） */
+    /** 同类验证（带超时重试）：失败 → { verdict:'different', failed:true, judgeError }（fail-safe：验证失败按不同类处理） */
     const verifySimilarityWithRetry = async (toolName, mode, justification, samples) => {
       const result = await withRetry((signal) => verifySimilarity(toolName, mode, justification, samples, signal), '同类验证')
-      if (result.failed) return { verdict: 'different', failed: true }
+      if (result.failed) {
+        const judgeError = describeError(result.error) || 'unknown'
+        audit(`JUDGE   同类验证不可用，按不同类转人工 | ${judgeError}`)
+        return { verdict: 'different', failed: true, judgeError }
+      }
       return result
     }
 
@@ -1287,8 +1594,11 @@ export default {
         if (!session) return next()
         let preset
         try {
-          preset = permissionPresets.current(session.events)
+          preset = permissionPresets.current(session)
         } catch (error) {
+          // 不能静默失败：0.5.0 只 console.error，用户完全看不出门控没生效（issue #3/#5/#15/#17/#21/#25）
+          const detail = describeError(error)
+          audit(`ERROR   permissionPresets.current failed: ${detail} → 降级人工（本次审批未接管）`)
           console.error(`[${NAME}] permissionPresets.current failed`, error)
           return next()
         }
@@ -1299,11 +1609,26 @@ export default {
         const reason = String(req.reason || '')
         const { mode, justification } = parseReason(reason)
         const sessionId = typeof session.id === 'string' ? session.id : ''
-        // 会话工作目录：相对路径快照解析的基准（DSH SessionHeader.cwd）
-        const sessionCwd = (typeof session.cwd === 'string' && session.cwd) ? session.cwd : ''
+        // 会话事件：0.2.x 起 session.events 不再是稳定访问器（issue #16/#1）→ 优先 snapshotEvents()，再退回 events 数组
+        const sessionEvents = (() => {
+          try {
+            if (typeof session.snapshotEvents === 'function') {
+              const snapshot = session.snapshotEvents()
+              if (Array.isArray(snapshot)) return snapshot
+            }
+          } catch (error) {
+            console.error(`[${NAME}] session.snapshotEvents() failed`, error)
+          }
+          return Array.isArray(session.events) ? session.events : []
+        })()
+        // 会话工作目录：相对路径快照解析的基准（DSH 0.2.x 在 SessionHeader.cwd）
+        const sessionHeader = session.header && typeof session.header === 'object' ? session.header : null
+        const sessionCwd = (sessionHeader && typeof sessionHeader.cwd === 'string' && sessionHeader.cwd)
+          ? sessionHeader.cwd
+          : ((typeof session.cwd === 'string' && session.cwd) ? session.cwd : '')
         // B 层：callId 回溯 tool/call 事件取结构化真实路径（edit/write 的 file_path / bash 的 command）
         // C 层兜底：未命中时 recordApprovalEvent 内部回退 extractFiles(justification)
-        const toolFiles = resolveToolCallFiles(req.callId, session.events)
+        const toolFiles = resolveToolCallFiles(req.callId, sessionEvents)
         const filesOpt = toolFiles ? { files: toolFiles, baseDir: sessionCwd } : { baseDir: sessionCwd }
 
         // 转人工统一处理：记录 pending → 交下游（web answerer）→ 记录终态事件（关闭提示条）
@@ -1333,7 +1658,7 @@ export default {
         }
 
         // 3. flash 判定
-        const { verdict, category, timedOut, failed } = await judgeWithFlash(toolName, mode, justification)
+        const { verdict, category, timedOut, failed, judgeError } = await judgeWithFlash(toolName, mode, justification)
 
         if (verdict === 'safe') {
           audit(`ALLOW   ${toolName} mode=${mode || 'none'} (flash-safe${timedOut ? '，重试后' : ''})`)
@@ -1345,7 +1670,7 @@ export default {
 
         // 4a. flash 完全失败（超时×2/异常×2）→ 转人工（fail-safe：无法判断绝不自动放行）
         if (failed) {
-          audit(`FAILED  ${toolName} mode=${mode || 'none'} → 人工 | ${reason.slice(0, 120)}`)
+          audit(`FAILED  ${toolName} mode=${mode || 'none'} judgeError=${judgeError || 'unknown'} → 人工 | ${reason.slice(0, 120)}`)
           return forwardToHuman(sessionId, toolName, mode, reason, justification, cat, 'flash-failed')
         }
 
