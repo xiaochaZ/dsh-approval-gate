@@ -73,6 +73,18 @@ Issue / PR 都欢迎，尤其：
 3. `npm test`；
 4. 更新版本号与 CHANGELOG。
 
+## 上游关系
+
+本仓库是 GitHub 意义上的**真 fork**（`forked from moon09300731/dsh-approval-gate`），历史建立在上游 `main`（`8419bc37`）之上，因此可以：
+
+```sh
+git remote add upstream https://github.com/moon09300731/dsh-approval-gate.git   # 首次
+git fetch upstream && git log --oneline HEAD..upstream/main                      # 看上游有没有新提交
+git diff upstream/main --stat                                                    # 看本 fork 相对上游的全部改动
+```
+
+若上游恢复维护，可直接在本仓库开 PR，或用 rebase 把本 fork 的提交叠到新的上游 `main` 上（若 `src/` 结构变化大，退回上面的锚点脚本流程更稳）。上游 issue #25 下留有一条根因说明（2026-10-22），供后来者检索。
+
 ## 已知未修（欢迎 PR）
 
 - 学习池（`learning`）仍会因人工放行累积同类样本，宽泛样本会让后续相似操作直接放行（上游 issue #4 P0-1 的另一半）。
