@@ -28,8 +28,10 @@ Flash 模型预判每次沙箱越界：常规操作自动放行，硬风险操�
 ### A. 从 GitHub 直装（推荐给他人使用）
 
 ```sh
-dsh plugin --profile <你的 profile 名> add github:xiaochaZ/dsh-approval-gate#v0.5.3
+dsh plugin --profile <你的 profile 名> add github:xiaochaZ/dsh-approval-gate#v0.5.4
 ```
+
+> 从 `xiaochaZ/dsh-approval-gate-upstream-mirror` 装的旧版会停在 v0.5.3（桌面端 web boot 会整页失败），请改指向本仓。
 
 使用官方桌面版（DeepSeek Harness App）时 profile 名通常是 `desktop`；用 `dsh web` 时通常是 `web`。不确定就 `ls ~/.dsh/profiles`。
 

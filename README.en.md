@@ -24,7 +24,7 @@ A Flash-model judge inspects every sandbox escalation: routine operations are ap
 ## 🚀 Install
 
 ```sh
-dsh plugin --profile <your-profile> add github:xiaochaZ/dsh-approval-gate#v0.5.3
+dsh plugin --profile <your-profile> add github:xiaochaZ/dsh-approval-gate#v0.5.4
 ```
 
 The official desktop app uses profile `desktop`; `dsh web` usually uses `web` (`ls ~/.dsh/profiles` if unsure).
