@@ -957,9 +957,25 @@ function extractOperationFingerprint(text) {
     if (seg.length <= 40) candidates.push(seg)
   }
   if (candidates.length === 0) return null
-  // 取最长片段（最长最有区分度），截断防超长
-  candidates.sort((a, b) => b.length - a.length)
+  // 排序先看「是否具体」再看长度：同一段说明里既有 README 这类裸词、也有 src/index.mjs 这类路径时，
+  // 必须取后者——否则沉淀出的规则会宽到放行整类操作（0.5.4 的宽泛样本误放行）。
+  candidates.sort((a, b) => {
+    const sa = isSpecificFingerprint(a) ? 1 : 0
+    const sb = isSpecificFingerprint(b) ? 1 : 0
+    if (sa !== sb) return sb - sa
+    return b.length - a.length
+  })
   return candidates[0].slice(0, 60)
+}
+
+// 指纹是否足够具体（可安全用于沉淀规则）：带扩展名 / 至少两级路径 / 连字符标识符
+function isSpecificFingerprint(fp) {
+  const s = String(fp || '').trim()
+  if (s.length < 5) return false
+  if (/\.[a-z0-9]{1,8}$/i.test(s)) return true
+  if (s.split(/[\\/]/).filter(Boolean).length >= 2) return true
+  if (s.length >= 8 && /[a-z][\w]*[-.][a-z]/i.test(s)) return true
+  return false
 }
 
 export default {
@@ -1191,6 +1207,10 @@ export default {
               const eventId = Number.parseInt(url.searchParams.get('eventId') || '', 10)
               const path = url.searchParams.get('path') || ''
               if (!Number.isInteger(eventId) || !path) return send(res, 400, { ok: false, error: 'eventId/path 必填' })
+              // 路径校验：拒绝穿越段、控制字符与超长输入（loopback 之后、读盘之前再收一道）
+              if (path.length > 512 || /[\u0000-\u001f]/.test(path) || path.split(/[\\/]/).some((seg) => seg === '..')) {
+                return send(res, 400, { ok: false, error: 'path 非法' })
+              }
               const snaps = loadEventSnapshots(eventId)
               // client 传的是 justification 中的原始路径（可能绝对/相对/裸文件名），多基准对齐快照的绝对路径
               const base = resolveAbsPath(path)
@@ -1242,6 +1262,10 @@ export default {
                 return null
               })()
               if (!event) return send(res, 404, { ok: false, error: '未找到该事件' })
+              // 撤销指令会投递到指定会话：事件必须确实属于这个会话，否则拒绝
+              if (event.sessionId && String(event.sessionId) !== String(sessionId)) {
+                return send(res, 403, { ok: false, error: 'eventId 不属于该会话' })
+              }
               const files = (event.files || []).map((f) => '`' + f + '`').join('、')
               const snapDir = SNAPSHOTS_DIR
               // 快照缺失保护：快照被清除后，撤销指令应如实告知 agent，避免其盲目恢复
@@ -1579,8 +1603,10 @@ export default {
     const recordSample = (key, justification) => {
       const fp = extractOperationFingerprint(justification)
       const ctx = String(justification || '').slice(0, 200)
-      const list = (learning.history[key] || []).slice()
-      const idx = fp ? list.findIndex((s) => s.fp === fp) : -1
+      // 无指纹的样本只能靠 flash 语义比对放行，是「宽泛样本误放行」的主要来源 → 不再记录
+      if (!fp) return fp
+      const list = (learning.history[key] || []).filter((s) => s && s.fp).slice()
+      const idx = list.findIndex((s) => s.fp === fp)
       if (idx >= 0) list[idx] = { fp, ctx }
       else list.push({ fp, ctx })
       learning.history[key] = list.slice(-10)
@@ -1711,7 +1737,8 @@ export default {
 
         if (confirmed >= threshold) {
           const fingerprint = extractOperationFingerprint(justification)
-          const samples = learning.history[key] || []
+          // 只取含指纹的最近 5 条样本：样本越多、越泛，flash 越容易判同类
+          const samples = (learning.history[key] || []).filter((s) => s && s.fp).slice(-5)
           const fpHit = Boolean(fingerprint) && samples.some((s) => s.fp === fingerprint)
 
           if (fpHit) {
@@ -1739,8 +1766,8 @@ export default {
             // 语义判断是否属于已确认的同类操作（不依赖关键词）
             const sim = await verifySimilarityWithRetry(toolName, mode, justification, samples)
             if (sim.verdict === 'same') {
-              // 判同类 → 自动放行；有指纹则沉淀规则（无指纹不沉淀，保留样本供后续验证）
-              if (learning.enabled && fingerprint) {
+              // 判同类 → 自动放行；只有「具体指纹」才沉淀规则（宽泛指纹沉淀 = 放行面失控）
+              if (learning.enabled && isSpecificFingerprint(fingerprint)) {
                 const rule = { tool: toolName, category: cat, contains: fingerprint }
                 if (mode) rule.mode = mode
                 if (!config.allowRules.some((r) => r.tool === rule.tool && r.mode === rule.mode && r.category === rule.category && r.contains === rule.contains)) {
