@@ -19,7 +19,7 @@
 | 上游仓库 | `https://github.com/moon09300731/dsh-approval-gate` |
 | 基线版本 | 上游 `main`（提交 `8419bc37`，package version 0.5.2） |
 | 基线提交 | `8419bc37`（2026-08-20） |
-| 本 fork 版本 | `0.5.3` |
+| 本 fork 版本 | `0.5.4` |
 | 许可 | MIT（沿用上游，保留原作者版权声明，见 `LICENSE`） |
 
 ## 与原版的差异
@@ -33,13 +33,21 @@
 3. **改进：失败不再完全静默**，判定失败写审计日志并降级人工，可由 `audit.log` 自诊断。
 4. 合并社区 PR 中仍然有效的修复项（逐条列在 `CHANGELOG.md`，标注对应上游 PR 编号）。
 
-## 内部标识为什么保持原样
+## 内部标识：哪些必须跟着包名走、哪些可以保持原样
 
-`src/index.mjs` 的 `NAME = 'dsh-approval-gate'`、客户端插件 id、UI 插槽 id、`$DSH_HOME/auto-approve/` 数据目录**均未改名**：
+上游的内部标识分两类，改包名时只有第一类必须跟着改。
 
-- 数据目录与包名无关，改包名不会搬移或丢失 `allowlist.json` / `learning.json` / `audit.log`；
-- UI 插槽 id 与前端状态键保持稳定，从上游版平滑替换时界面无需重建状态；
-- 审计前缀不变，历史审计可持续追加。
+**必须等于包名（改包名就要改，`npm test` 会校验）**
+
+- `client.js` 里 `window.__ModuleLoader__.load({ id })` 的 id。宿主的客户端模块系统把**解析后的包名**当作浏览器模块身份（`WebBootGraph` 的 `row.id`），bundle 路由也按包名拼（`plugins/??<包名>/client.js&rev=…`）。id 与包名不一致时：这条 row 永远注册不上 → 系统按设计回退到该 row 的单资源 combo URL、把同一份 bundle 再执行一次 → 第二次 `register()` 抛 `duplicate factory registration` → 该插件 import 失败，**整页前端 boot 中止**（0.5.3 桌面端「应用无法启动」事故根因）。
+  守卫：`tools/check-client-id.mjs`（`npm test` 已包含）；`node tools/check-client-id.mjs <profile>/node_modules` 可一次性审计整机所有客户端插件。
+
+**可以保持原样（与模块身份无关）**
+
+- `src/index.mjs` 的 `NAME = 'dsh-approval-gate'`：审计前缀与日志标签；
+- `$DSH_HOME/auto-approve/` 数据目录：与包名无关，改包名不会搬移或丢失 `allowlist.json` / `learning.json` / `audit.log`；
+- UI 插槽 id（`dsh-approval-gate.notice` / `.history` / `.settings`）：前端状态键与排序，保持稳定可让上游版平滑替换；
+- 样式标记 `data-plugin-css="dsh-approval-gate"`：纯装饰属性，模块系统按 owner 记录样式，不依赖它的取值。
 
 ## 与上游的同步策略
 
@@ -56,7 +64,7 @@ Issue / PR 都欢迎，尤其：
 - 宿主 DSH 版本升级后的签名漂移（本插件依赖 `permissionPresets` / `sessionProjections` 内部 API）；
 - 风险判定误报/漏报样本（附 `audit.log` 片段与操作类型）。
 
-提交前请确保 `npm test`（即两个入口的 `node --check`）通过，并说明测试过的 DSH 版本与 profile 类型（`web` / `desktop`）。
+提交前请确保 `npm test` 通过（两个入口的 `node --check` + 客户端 bundle id 校验 + 8 条用例），并说明测试过的 DSH 版本与 profile 类型（`web` / `desktop`）。
 
 ## 本 fork 的改造方式（可重建）
 
@@ -65,12 +73,13 @@ Issue / PR 都欢迎，尤其：
 - `apply-fork.mjs`：服务端 `src/index.mjs` 的 24 处改造。每处都要求锚点**恰好命中 1 次**，改完自动 `node --check`，失败即中止（不会半途写坏）。
 - `patches/*.frag`：各改造点的完整新代码（profile 解析、设置页状态、一键初始化、词边界匹配、判定模型解析、flash 调用、重试包装、路由守卫、模型 API）。
 - `apply-fork-client.mjs`：前端 `client.js` 的 4 处改造（判定模型输入框、初始化卡片显示实际路径与歧义提示）。
+  注意：从上游覆盖 `client.js` 后，`__ModuleLoader__.load({ id })` 要手工改回**包名**（锚点脚本不管这一处，`npm test` 会拦下）。
 
 同步上游新版本时的步骤：
 
 1. 取上游新 tarball 覆盖 `src/`、`client.js`、`cordis.patch.yml`、`README*.md`、`LICENSE`；
 2. 跑 `node apply-fork.mjs && node apply-fork-client.mjs`（锚点漂移会立刻报错，据此更新对应 `.frag`）；
-3. `npm test`；
+3. `npm test`（含客户端 bundle id 校验；从上游覆盖过 `client.js` 时会被它拦下）；
 4. 更新版本号与 CHANGELOG。
 
 ## 上游关系

@@ -4,6 +4,20 @@
 基线：上游 `main`（提交 `8419bc37`，version 0.5.2）。npm 上的 0.5.0 落后于 main（缺文件快照 B 层等），因此本 fork 以 main 为基线。
 条目里标注的「上游 PR #N / issue #N」指上游仓库对应的提交与报告。
 
+## 0.5.4
+
+### 致命修复（前端 boot 整页失败）
+
+- **客户端 bundle 的注册 id 改成包名**：`client.js` 里 `window.__ModuleLoader__.load({ id })` 仍是上游的 `dsh-approval-gate`，而宿主的浏览器模块身份是**解析后的包名**（改名后为 `@xiaochaz/dsh-approval-gate`）。两者不等时，这条 row 永远注册不上，客户端模块系统按设计回退到该 row 的单资源 combo URL、把同一份 bundle 再执行一次，第二次 `register()` 抛 `client-modules: duplicate factory registration for "dsh-approval-gate"`；该插件 import 失败，桌面端报 `web boot: 1 entry did not activate` 并弹「应用无法启动」。
+  `NAME`、`$DSH_HOME/auto-approve/` 数据目录、UI 插槽 id 不受影响，仍然保持原样（它们不参与模块身份）。
+- **新增守卫测试** `tools/check-client-id.mjs`（已并入 `npm test`）：断言 bundle 注册 id 等于包名；也可以 `node tools/check-client-id.mjs <profile>/node_modules` 一次性审计整机所有客户端插件。
+
+### 影响范围
+
+- 只影响前端 boot；服务端判定链路（预设读取、判定模型、审计、路由守卫）与 0.5.3 一致。
+- 0.5.3 在 `desktop` profile 下无法启动 Web UI（0.5.2 及更早没有这个问题，因为当时包名与注册 id 同为 `dsh-approval-gate`），升级到 0.5.4 即恢复。
+- 事故归因与责任划分见 [docs/INCIDENT-20261022-client-id.md](./docs/INCIDENT-20261022-client-id.md)。
+
 ## 0.5.3
 
 首个自持维护版本。目标：修掉「装了但静默不工作」的致命问题，并消化上游长期未合并 PR/issue 中可自决的部分。

@@ -12,7 +12,11 @@
  * （events.jsonl 由 host 插件在每次自动放行时追加）。
  */
 window.__ModuleLoader__.load({
-  id: 'dsh-approval-gate',
+  // 必须是「包名」：宿主把解析后的包名当作浏览器模块身份（WebBootGraph row.id），
+  // bundle 若注册成别的 id，该 row 永远注册不上 → 系统回退到单资源 combo URL 重跑同一份
+  // bundle → 第二次 register 抛 duplicate factory registration → 该插件 import 失败、
+  // 整页 web boot 中止（2026-10-22 事故根因）。
+  id: '@xiaochaz/dsh-approval-gate',
   factory: (require) => {
     var module = { exports: {} }
     var exports = module.exports
