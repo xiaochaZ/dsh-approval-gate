@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安全问题（私密报告）
+    url: https://github.com/xiaochaZ/dsh-approval-gate/security/advisories/new
+    about: 判定链绕过、路由未鉴权、路径越界等，请不要开公开 issue。
+  - name: 上游项目（基线来源）
+    url: https://github.com/moon09300731/dsh-approval-gate
+    about: 本项目接续自该仓库，原项目版权与历史提交归属原作者。

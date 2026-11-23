@@ -1,0 +1,22 @@
+name: triage
+on:
+  issues:
+    types: [opened]
+permissions:
+  issues: write
+jobs:
+  assign:
+    if: github.event.issue.user.type != 'Bot'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 分配给维护者并打 needs-triage
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          n="${{ github.event.issue.number }}"
+          count=$(gh issue view "$n" --json assignees --jq '.assignees | length')
+          if [ "$count" = "0" ]; then
+            gh issue edit "$n" --add-assignee "${{ github.repository_owner }}"
+          fi
+          gh issue edit "$n" --add-label needs-triage

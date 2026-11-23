@@ -1,0 +1,50 @@
+name: Bug 报告
+description: 门控没生效、误判、前端报错等
+title: "[bug] "
+labels: ["bug", "needs-triage"]
+assignees: ["xiaochaZ"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请先确认：装完插件后必须完成「配置权限预设」这一步，否则门控不会生效（见 README 安装章节）。
+        安全类问题请不要开公开 issue，见 SECURITY.md。
+  - type: input
+    id: dsh-version
+    attributes:
+      label: DSH 版本
+      placeholder: "0.2.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: profile
+    attributes:
+      label: profile 类型
+      options: ["web", "desktop", "其他"]
+    validations:
+      required: true
+  - type: input
+    id: plugin-version
+    attributes:
+      label: 插件版本
+      placeholder: "0.5.4"
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 现象
+      description: 实际发生了什么。若是「门控没生效」，请附 ~/.dsh/auto-approve/audit.log 片段。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: 复现步骤
+      description: 触发那个操作的完整命令或描述（脱敏）。
