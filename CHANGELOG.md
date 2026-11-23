@@ -1,7 +1,7 @@
 # 更新日志
 
-本项目 fork 自 [`moon09300731/dsh-approval-gate`](https://github.com/moon09300731/dsh-approval-gate)。
-基线：上游 `main`（提交 `8419bc37`，version 0.5.2）。npm 上的 0.5.0 落后于 main（缺文件快照 B 层等），因此本 fork 以 main 为基线。
+本项目接续维护自 [`moon09300731/dsh-approval-gate`](https://github.com/moon09300731/dsh-approval-gate)（自 2026-10 起由 xiaochaZ 接手；原项目 MIT，版权归原作者）。
+基线：上游 `main`（提交 `8419bc37`，version 0.5.2）。npm 上的 0.5.0 落后于 main（缺文件快照 B 层等），因此本项目以 main 为基线。
 条目里标注的「上游 PR #N / issue #N」指上游仓库对应的提交与报告。
 
 ## 0.5.4

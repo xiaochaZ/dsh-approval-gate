@@ -4,9 +4,9 @@
 
 **Automatic approval gate for DeepSeek Harness — minimal human intervention: safe operations pass automatically, dangerous ones always escalate to a human (fail-safe).**
 
-> Community-maintained fork of [`dsh-approval-gate`](https://github.com/moon09300731/dsh-approval-gate) (baseline upstream main 0.5.2, fork version 0.5.3).
-> The upstream project has been abandoned since 2026-08-20. This fork fixes the critical "gate silently does nothing on the official desktop app / any non-`web` profile" bug and works through the open upstream issues.
-> See [`FORK.md`](./FORK.md) and [`CHANGELOG.md`](./CHANGELOG.md).
+> **Community continuation** of [`dsh-approval-gate`](https://github.com/moon09300731/dsh-approval-gate). Upstream has had no commits since 2026-08-20; this project has been maintained independently since 2026-10 (baseline 0.5.2, current 0.5.4).
+> Not affiliated with the original maintainer: original code is MIT, copyright remains with the upstream author (see [`NOTICE`](./NOTICE)).
+> See [`MAINTAINING.md`](./MAINTAINING.md) and [`CHANGELOG.md`](./CHANGELOG.md).
 
 A Flash-model judge inspects every sandbox escalation: routine operations are approved automatically, while hard-risk categories (delete / credentials / remote / system paths / bulk-irreversible) always go to a human. Learning only ever generalizes from operations you personally confirmed, and a review UI shows the full timeline.
 
@@ -75,8 +75,8 @@ A line containing `ERROR   permissionPresets.current failed` means the host API 
 
 ## 📁 Data files
 
-`$DSH_HOME/auto-approve/` (default `~/.dsh/auto-approve`) holds `allowlist.json`, `learning.json`, `audit.log`, `events.jsonl`, and `snapshots/`. The directory is independent of the package name, so switching between upstream and this fork preserves all learned rules and audit history.
+`$DSH_HOME/auto-approve/` (default `~/.dsh/auto-approve`) holds `allowlist.json`, `learning.json`, `audit.log`, `events.jsonl`, and `snapshots/`. The directory is independent of the package name, so switching between upstream and this project preserves all learned rules and audit history.
 
 ## 📄 License
 
-MIT — see [`LICENSE`](./LICENSE). Original copyright notice retained. This fork is community-maintained and not affiliated with the original maintainer.
+MIT — see [`LICENSE`](./LICENSE). Original copyright notice retained. This project is community-maintained and not affiliated with the original maintainer.

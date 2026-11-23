@@ -4,9 +4,9 @@
 
 **DeepSeek Harness 自动审批门控 —— 最小人工介入，安全自动放行、危险转人工（fail-safe）。**
 
-> 本项目是 [`dsh-approval-gate`](https://github.com/moon09300731/dsh-approval-gate) 的社区维护 fork（基线上游 main 0.5.2，本 fork 版本 0.5.3）。
-> 上游已停更，本 fork 修好了「官方桌面版 / 任意 profile 下门控静默失效」等致命问题，并持续消化上游 issue。
-> 差异与来源说明见 [`FORK.md`](./FORK.md) 与 [`CHANGELOG.md`](./CHANGELOG.md)。
+> **社区接续维护版** · 上游 [`dsh-approval-gate`](https://github.com/moon09300731/dsh-approval-gate) 自 2026-08-20 停更，本项目自 2026-10 起接手维护（基线 0.5.2，当前 0.5.4）。
+> 与原维护者无隶属关系：原代码 MIT，版权归原作者，见 [`NOTICE`](./NOTICE)。已修「官方桌面版 / 任意 profile 下门控静默失效」等致命问题，并逐条消化上游 issue。
+> 来源、差异与维护策略见 [`MAINTAINING.md`](./MAINTAINING.md) 与 [`CHANGELOG.md`](./CHANGELOG.md)。
 
 Flash 模型预判每次沙箱越界：常规操作自动放行，硬风险操作（删除 / 凭据 / 远程 / 系统 / 批量）永远转人工确认；学习沉淀只针对你确认过的操作，并提供界面化人工审查入口。
 
@@ -112,7 +112,7 @@ pnpm add "link:<刚 clone 的绝对路径>"
 | `auto-approve/events.jsonl` | 「审批」视图的时间线数据 |
 | `auto-approve/snapshots/` | 文件 diff / 撤销所需快照 |
 
-数据目录与包名无关：从上游版换到本 fork（或反过来）**不会**丢历史学习与审计。
+数据目录与包名无关：从上游版换到本项目（或反过来）**不会**丢历史学习与审计。
 
 ## 🧯 常见问题
 
@@ -120,7 +120,7 @@ pnpm add "link:<刚 clone 的绝对路径>"
 |---|---|
 | 下拉里没有「自动审批（Flash）」 | `auto-approve` 预设没写进 `cordis.patch.yml`，或没重启 |
 | 选了预设但从不自动放行 | 先看 `audit.log`：若是 `ERROR ... → 降级人工`，宿主 API 漂移（开 issue 附宿主版本）；若日志根本没增长，插件没被挂载（跑第 1 步 `--dump-config`） |
-| 设置页说「未配置」，但明明配了 | 0.5.0 的路径硬编码 bug（只认 `profiles/web`）；本 fork 已修 |
+| 设置页说「未配置」，但明明配了 | 0.5.0 的路径硬编码 bug（只认 `profiles/web`）；本项目已修 |
 | 升级 DSH 后突然失效 | 本插件依赖宿主内部 API（`permissionPresets` / `sessionProjections`），升级后请重跑「验证」三步 |
 
 ## ⚠️ 已知限制
@@ -132,8 +132,8 @@ pnpm add "link:<刚 clone 的绝对路径>"
 ## 📖 版本与变更
 
 - [`CHANGELOG.md`](./CHANGELOG.md)：每个版本的修复内容，标注对应的上游 PR / issue 编号
-- [`FORK.md`](./FORK.md)：基线、与原版的差异、内部标识为何不改名、与上游的同步策略
+- [`MAINTAINING.md`](./MAINTAINING.md)：基线、与原版的差异、内部标识分类、与上游的关系与同步策略
 
 ## 📄 License
 
-MIT，详见 [`LICENSE`](./LICENSE)（保留上游原作者版权声明）。本项目为社区 fork，与原仓库维护者无关。
+MIT，详见 [`LICENSE`](./LICENSE)（保留上游原作者版权声明）。本项目为社区接续维护，与原仓库维护者无关。

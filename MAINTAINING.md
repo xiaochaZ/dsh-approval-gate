@@ -1,8 +1,8 @@
-# 关于本项目（Fork 说明）
+# 维护说明（接续项目）
 
-本仓库是 [`moon09300731/dsh-approval-gate`](https://github.com/moon09300731/dsh-approval-gate) 的**社区维护 fork**，包名 `@xiaochaz/dsh-approval-gate`。
+本项目是 [`moon09300731/dsh-approval-gate`](https://github.com/moon09300731/dsh-approval-gate) 的**社区接续维护版本**，包名 `@xiaochaz/dsh-approval-gate`，仓库 `xiaochaZ/dsh-approval-gate`。
 
-## 为什么 fork
+## 为什么接续
 
 上游自 **0.5.0**（npm 发布于 2026-08-18）后停止维护：
 
@@ -19,7 +19,7 @@
 | 上游仓库 | `https://github.com/moon09300731/dsh-approval-gate` |
 | 基线版本 | 上游 `main`（提交 `8419bc37`，package version 0.5.2） |
 | 基线提交 | `8419bc37`（2026-08-20） |
-| 本 fork 版本 | `0.5.4` |
+| 本项目版本 | `0.5.4` |
 | 许可 | MIT（沿用上游，保留原作者版权声明，见 `LICENSE`） |
 
 ## 与原版的差异
@@ -54,7 +54,7 @@
 上游已停更，**不再做机械同步**。若上游恢复更新（有 PR 合并或新版本发布），处理原则：
 
 1. 先读上游 diff，按 `CHANGELOG.md` 里记录的修复清单逐项比对，避免把已修的 bug 改回去；
-2. 上游新增的功能特性优先并入，本 fork 的修复保持为独立提交，便于三方合并；
+2. 上游新增的功能特性优先并入；本项目的修复保持为独立提交，便于三方合并；
 3. 每次并入后必须跑一遍「验证」章节的检查（`--dump-config` + 数据文件 + 活体探针）。
 
 ## 贡献
@@ -66,7 +66,7 @@ Issue / PR 都欢迎，尤其：
 
 提交前请确保 `npm test` 通过（两个入口的 `node --check` + 客户端 bundle id 校验 + 8 条用例），并说明测试过的 DSH 版本与 profile 类型（`web` / `desktop`）。
 
-## 本 fork 的改造方式（可重建）
+## 本项目相对上游的改造方式（可重建）
 
 上游 10 个 open PR 全部 **无法** `git apply` 到 main（PR 基线 `9e0eefd` 早于 `8419bc37`，patch context 已漂移），所以改造以「锚点替换脚本」形式保存，可直接复现、也可在上游再更新时重跑：
 
@@ -84,19 +84,19 @@ Issue / PR 都欢迎，尤其：
 
 ## 上游关系
 
-本仓库是 GitHub 意义上的**真 fork**（`forked from moon09300731/dsh-approval-gate`），历史建立在上游 `main`（`8419bc37`）之上，因此可以：
+本仓库已是**独立仓库**（不再是 fork），但历史完整建立在上游 `main`（`8419bc37`）之上，因此这些命令仍然有效：
 
 ```sh
 git remote add upstream https://github.com/moon09300731/dsh-approval-gate.git   # 首次
 git fetch upstream && git log --oneline HEAD..upstream/main                      # 看上游有没有新提交
-git diff upstream/main --stat                                                    # 看本 fork 相对上游的全部改动
+git diff upstream/main --stat                                                    # 看本项目相对上游的全部改动
 ```
 
-若上游恢复维护，可直接在本仓库开 PR，或用 rebase 把本 fork 的提交叠到新的上游 `main` 上（若 `src/` 结构变化大，退回上面的锚点脚本流程更稳）。上游 issue #25 下留有一条根因说明（2026-10-22），供后来者检索。
+若上游恢复维护，可直接在本仓库开 PR，或用 rebase 把本项目的提交叠到新的上游 `main` 上（若 `src/` 结构变化大，退回上面的锚点脚本流程更稳）。上游 issue #25 下留有一条根因说明（2026-10-22），供后来者检索。
 
 ## 已知未修（欢迎 PR）
 
 - 学习池（`learning`）仍会因人工放行累积同类样本，宽泛样本会让后续相似操作直接放行（上游 issue #4 P0-1 的另一半）。
-- 黑名单词表未系统性重整（本 fork 只改匹配方式为词边界）。
+- 黑名单词表未系统性重整（本项目只改匹配方式为词边界）。
 - `diff` / `revert` 的路径校验未加固（路径来自事件记录，未做工作区约束校验）。
 - 路由守卫目前是「回环 + 同源」策略；若宿主将来提供官方鉴权 helper，应改为复用宿主鉴权。
