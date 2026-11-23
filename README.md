@@ -28,12 +28,21 @@ Flash 模型预判每次沙箱越界：常规操作自动放行，硬风险操�
 ### A. 从 GitHub 直装（推荐给他人使用）
 
 ```sh
-dsh plugin --profile <你的 profile 名> add github:xiaochaZ/dsh-approval-gate#v0.5.4
+dsh plugin --profile <你的 profile 名> add github:xiaochaZ/dsh-approval-gate#v0.5.5
 ```
 
 > 从 `xiaochaZ/dsh-approval-gate-upstream-mirror` 装的旧版会停在 v0.5.3（桌面端 web boot 会整页失败），请改指向本仓。
 
 使用官方桌面版（DeepSeek Harness App）时 profile 名通常是 `desktop`；用 `dsh web` 时通常是 `web`。不确定就 `ls ~/.dsh/profiles`。
+
+> **装不上时（npm registry 不可达 / 网络受限）**：每个 Release 都附了打包产物 tgz，可绕过 registry 直装：
+>
+> ```sh
+> cd ~/.dsh/profiles/<你的 profile 名>
+> pnpm add "https://github.com/xiaochaZ/dsh-approval-gate/releases/download/v0.5.5/xiaochaz-dsh-approval-gate-0.5.4.tgz"
+> ```
+>
+> 然后在同一份 `package.json` 的 `dsh.profile.bundles` 里加上 `"@xiaochaz/dsh-approval-gate"`，再 `pnpm install`。
 
 ### B. 本地源码 `link:`（推荐给参与开发/改代码的人）
 

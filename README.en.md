@@ -24,10 +24,19 @@ A Flash-model judge inspects every sandbox escalation: routine operations are ap
 ## 🚀 Install
 
 ```sh
-dsh plugin --profile <your-profile> add github:xiaochaZ/dsh-approval-gate#v0.5.4
+dsh plugin --profile <your-profile> add github:xiaochaZ/dsh-approval-gate#v0.5.5
 ```
 
 The official desktop app uses profile `desktop`; `dsh web` usually uses `web` (`ls ~/.dsh/profiles` if unsure).
+
+> **If the registry is unreachable** (restricted network, no npm access): every Release ships the packed tgz, which installs without touching the registry:
+>
+> ```sh
+> cd ~/.dsh/profiles/<your-profile>
+> pnpm add "https://github.com/xiaochaZ/dsh-approval-gate/releases/download/v0.5.5/xiaochaz-dsh-approval-gate-0.5.4.tgz"
+> ```
+>
+> Then add `"@xiaochaz/dsh-approval-gate"` to `dsh.profile.bundles` in the same `package.json` and run `pnpm install`.
 
 For local development, clone the repo and register it as a `link:` dependency of the profile, then add `"@xiaochaz/dsh-approval-gate"` to `dsh.profile.bundles` and run `pnpm install`.
 
